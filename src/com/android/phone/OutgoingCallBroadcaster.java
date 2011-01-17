@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2008 The Android Open Source Project
+ * Copyright (c) 2010-2011, Code Aurora Forum. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -55,6 +56,9 @@ public class OutgoingCallBroadcaster extends Activity {
     public static final String EXTRA_ORIGINAL_URI = "android.phone.extra.ORIGINAL_URI";
     public static final String EXTRA_NEW_CALL_INTENT = "android.phone.extra.NEW_CALL_INTENT";
     public static final String EXTRA_SIP_PHONE_URI = "android.phone.extra.SIP_PHONE_URI";
+
+    /** the key used to specify subscription to be used for emergency calls */
+    public static final String SUBSCRIPTION = "Subscription";
 
     /**
      * Identifier for intent extra for sending an empty Flash message for
@@ -235,6 +239,7 @@ public class OutgoingCallBroadcaster extends Activity {
             if (!Intent.ACTION_CALL.equals(intent.getAction())) {
                 Log.w(TAG, "Attempt to deliver non-CALL action; forcing to CALL");
                 intent.setAction(Intent.ACTION_CALL);
+                intent.putExtra(SUBSCRIPTION, PhoneApp.getVoiceSubscription());
             }
         }
 
@@ -264,6 +269,7 @@ public class OutgoingCallBroadcaster extends Activity {
                                                    "com.android.contacts.DialtactsActivity");
                 invokeFrameworkDialer.setAction(Intent.ACTION_DIAL);
                 invokeFrameworkDialer.setData(intent.getData());
+                invokeFrameworkDialer.putExtra(SUBSCRIPTION, PhoneApp.getVoiceSubscription());
 
                 if (DBG) Log.v(TAG, "onCreate(): calling startActivity for Dialer: "
                                + invokeFrameworkDialer);
@@ -284,6 +290,9 @@ public class OutgoingCallBroadcaster extends Activity {
                 finish();
                 return;
             }
+            int sub = PhoneApp.getInstance().getVoiceSubscriptionInService();
+            intent.putExtra(SUBSCRIPTION, sub);
+            Log.d(TAG, "Attempting emergency call on sub :" + sub);
             callNow = true;
         } else {
             Log.e(TAG, "Unhandled Intent " + intent + ".");

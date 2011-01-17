@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Copyright (C) 2007 The Android Open Source Project
+     Copyright (C) 2010-2011, Code Aurora Forum. All rights reserved.
 
      Licensed under the Apache License, Version 2.0 (the "License");
      you may not use this file except in compliance with the License.
@@ -234,6 +235,14 @@
             </intent-filter>
         </activity>
 
+        <!-- Mobile Networks Settings -->
+        <activity android:name="MobileNetworkSettings" android:label="@string/settings_label">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.MAIN" />
+            </intent-filter>
+        </activity>
+
         <!-- general settings -->
         <activity android:name="Settings" android:label="@string/settings_label">
             <intent-filter>
@@ -366,6 +375,27 @@
             </intent-filter>
         </activity>
 
+        <!-- Call Independent Services setting -->
+        <activity android:name="CallIndependentServices" android:label="@string/call_settings"
+            android:configChanges="orientation|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+
+        <!-- dual mode setting -->
+        <activity android:name="MultiSimSetting" android:label="@string/callind_multi_sim"
+            android:configChanges="orientation|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
         <!-- call feature setting -->
         <activity android:name="CallFeaturesSetting" android:label="@string/call_settings"
             android:configChanges="orientation|keyboardHidden">
@@ -436,6 +466,14 @@
         </activity>
         <activity android:name=".SipCallOptionHandler"
                 android:configChanges="orientation|keyboardHidden">
+        </activity>
+
+        <activity android:name="SetSubscription"
+            android:label="@string/set_subscription"
+            android:configChanges="orientation|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+            </intent-filter>
         </activity>
 
     </application>

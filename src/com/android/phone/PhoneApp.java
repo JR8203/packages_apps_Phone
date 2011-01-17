@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2006 The Android Open Source Project
- * Copyright (c) 2010, Code Aurora Forum. All rights reserved.
+ * Copyright (c) 2010-2011, Code Aurora Forum. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,6 +51,9 @@ import android.util.Config;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.widget.Toast;
+import android.telephony.TelephonyManager;
+import android.provider.Settings;
+import java.util.ArrayList;
 
 import com.android.internal.telephony.Call;
 import com.android.internal.telephony.CallManager;
@@ -84,14 +87,14 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
      * or else
      *   (PhoneApp.DBG_LEVEL >= 2)
      * depending on the desired verbosity.
-     *
-     * ***** DO NOT SUBMIT WITH DBG_LEVEL > 0 *************
      */
-    /* package */ static final int DBG_LEVEL = 0;
+    /* package */ static final int DBG_LEVEL = 1;
 
-    private static final boolean DBG =
-            (PhoneApp.DBG_LEVEL >= 1) && (SystemProperties.getInt("ro.debuggable", 0) == 1);
-    private static final boolean VDBG = (PhoneApp.DBG_LEVEL >= 2);
+    //TODO DSDS,restore the logging levels
+    private static final boolean DBG = true;
+            //(PhoneApp.DBG_LEVEL >= 1) && (SystemProperties.getInt("ro.debuggable", 0) == 1);
+    //private static final boolean VDBG = (PhoneApp.DBG_LEVEL >= 2);
+    private static final boolean VDBG = true;
 
     // Message codes; see mHandler below.
     private static final int EVENT_SIM_NETWORK_LOCKED = 3;
@@ -156,9 +159,6 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
     boolean mShowBluetoothIndication = false;
     static int mDockState = Intent.EXTRA_DOCK_STATE_UNDOCKED;
 
-    // Internal PhoneApp Call state tracker
-    CdmaPhoneCallState cdmaPhoneCallState;
-
     // The InCallScreen instance (or null if the InCallScreen hasn't been
     // created yet.)
     private InCallScreen mInCallScreen;
@@ -211,16 +211,22 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
     /** boolean indicating restoring mute state on InCallScreen.onResume() */
     private boolean mShouldRestoreMuteOnInCallResume;
 
+    /* Array of SinglePhone Objects to store each phoneproxy and associated objects */
+    private static ArrayList<SinglePhone> mSinglePhones = new ArrayList<SinglePhone> ();
+
+    // Internal PhoneApp CDMA Call state tracker
+    CdmaPhoneCallState cdmaPhoneCallState = null;
+
     // Following are the CDMA OTA information Objects used during OTA Call.
     // cdmaOtaProvisionData object store static OTA information that needs
     // to be maintained even during Slider open/close scenarios.
     // cdmaOtaConfigData object stores configuration info to control visiblity
     // of each OTA Screens.
     // cdmaOtaScreenState object store OTA Screen State information.
-    public OtaUtils.CdmaOtaProvisionData cdmaOtaProvisionData;
-    public OtaUtils.CdmaOtaConfigData cdmaOtaConfigData;
-    public OtaUtils.CdmaOtaScreenState cdmaOtaScreenState;
-    public OtaUtils.CdmaOtaInCallScreenUiState cdmaOtaInCallScreenUiState;
+    public OtaUtils.CdmaOtaProvisionData cdmaOtaProvisionData = null;
+    public OtaUtils.CdmaOtaConfigData cdmaOtaConfigData = null;
+    public OtaUtils.CdmaOtaScreenState cdmaOtaScreenState = null;
+    public OtaUtils.CdmaOtaInCallScreenUiState cdmaOtaInCallScreenUiState = null;
 
     // TTY feature enabled on this platform
     private boolean mTtyEnabled;
@@ -228,6 +234,7 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
     private int mPreferredTtyMode = Phone.TTY_MODE_OFF;
     private boolean mTtySetOnPowerUp = false;
     private int mPhoneType;
+    private int mDefaultSubscription = 0;
 
     /**
      * Set the restore mute state flag. Used when we are setting the mute state
@@ -247,10 +254,20 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
     }
 
     /*package*/void checkPhoneType() {
-        if (mPhoneType != phone.getPhoneType()) {
-            Log.d(LOG_TAG,"handleMessage: radio Technology has changed (" + phone.getPhoneName() + ")");
-            initForNewRadioTechnology();
-            mPhoneType = phone.getPhoneType();
+        SinglePhone singlePhone;
+        for (int i = 0; i < TelephonyManager.getPhoneCount(); i++) {
+            //check for both phone states, if there is any change re-register for the events.
+            singlePhone = getSinglePhone(i);
+            Log.d(LOG_TAG,"old phone type:"+singlePhone.mPhoneType+ ", New Phone type:"+singlePhone.mPhone.getPhoneType());
+            if (singlePhone.mPhoneType != singlePhone.mPhone.getPhoneType()) {
+                Log.d(LOG_TAG,"handleMessage: radio Technology has changed (" + singlePhone.mPhone.getPhoneName() + ")");
+                if (singlePhone.mPhoneType == Phone.PHONE_TYPE_CDMA) {
+                    //clear cdma variables of single phone as RAT changed.
+                    clearCdmaVariables(i);
+                }
+                initForNewRadioTechnology(i);
+                singlePhone.mPhoneType = singlePhone.mPhone.getPhoneType();
+            }
         }
     }
 
@@ -386,6 +403,7 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
                             mInCallScreen.requestUpdateTouchUi();
                         }
                     }
+                    break;
 
                 case EVENT_TTY_PREFERRED_MODE_CHANGED:
                     // TTY mode is only applied if a headset is connected
@@ -422,16 +440,26 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
         if (VDBG) Log.v(LOG_TAG, "onCreate()...");
 
         ContentResolver resolver = getContentResolver();
+        if (TelephonyManager.isMultiSimEnabled()) {
+            Log.v(LOG_TAG, "PhoneApp onCreate() DSDS Enabled!!!!");
+        }
 
         if (phone == null) {
             // Initialize the telephony framework
             PhoneFactory.makeDefaultPhones(this);
 
-            // Get the default phone
-            phone = PhoneFactory.getDefaultPhone();
-
             mCM = CallManager.getInstance();
-            mCM.registerPhone(phone);
+            // Create SinglePhone which hold phone proxy and its corresponding memebers.
+            for(int i = 0; i < TelephonyManager.getPhoneCount(); i++) {
+                mSinglePhones.add(new SinglePhone(i));
+                mCM.registerPhone(mSinglePhones.get(i).mPhone);
+            }
+
+            // Get the default subscription from the system property
+            mDefaultSubscription = getDefaultSubscription();
+
+            // Set Default PhoneApp variables
+            setDefaultPhone(mDefaultSubscription);
 
 
             mPhoneType = phone.getPhoneType();
@@ -442,12 +470,6 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
             mHandler.sendEmptyMessage(EVENT_START_SIP_SERVICE);
 
             int phoneType = phone.getPhoneType();
-
-            if (phoneType == Phone.PHONE_TYPE_CDMA) {
-                // Create an instance of CdmaPhoneCallState and initialize it to IDLE
-                cdmaPhoneCallState = new CdmaPhoneCallState();
-                cdmaPhoneCallState.CdmaPhoneCallStateInit();
-            }
 
             if (BluetoothAdapter.getDefaultAdapter() != null) {
                 mBtHandsfree = new BluetoothHandsfree(this, mCM);
@@ -519,6 +541,7 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
             intentFilter.addAction(TelephonyIntents.ACTION_RADIO_TECHNOLOGY_CHANGED);
             intentFilter.addAction(TelephonyIntents.ACTION_SERVICE_STATE_CHANGED);
             intentFilter.addAction(TelephonyIntents.ACTION_EMERGENCY_CALLBACK_MODE_CHANGED);
+            intentFilter.addAction(TelephonyIntents.ACTION_DEFAULT_SUBSCRIPTION_CHANGED);
             if (mTtyEnabled) {
                 intentFilter.addAction(TtyIntent.TTY_PREFERRED_MODE_CHANGE_ACTION);
             }
@@ -549,13 +572,9 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
             PhoneUtils.setAudioMode(mCM);
         }
 
-        boolean phoneIsCdma = (phone.getPhoneType() == Phone.PHONE_TYPE_CDMA);
 
-        if (phoneIsCdma) {
-            cdmaOtaProvisionData = new OtaUtils.CdmaOtaProvisionData();
-            cdmaOtaConfigData = new OtaUtils.CdmaOtaConfigData();
-            cdmaOtaScreenState = new OtaUtils.CdmaOtaScreenState();
-            cdmaOtaInCallScreenUiState = new OtaUtils.CdmaOtaInCallScreenUiState();
+        for(int i = 0; i < TelephonyManager.getPhoneCount(); i++) {
+            updatePhoneAppCdmaVariables(i) ;
         }
 
         // XXX pre-load the SimProvider so that it's ready
@@ -583,11 +602,35 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
                                                               android.provider.Settings.System.HEARING_AID,
                                                               0);
             AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-            audioManager.setParameter(CallFeaturesSetting.HAC_KEY, hac != 0 ?
-                                      CallFeaturesSetting.HAC_VAL_ON :
-                                      CallFeaturesSetting.HAC_VAL_OFF);
+            audioManager.setParameter(CallIndependentServices.HAC_KEY, hac != 0 ?
+                                      CallIndependentServices.HAC_VAL_ON :
+                                      CallIndependentServices.HAC_VAL_OFF);
         }
-   }
+    }
+
+    // updates cdma variables of PhoneApp
+    private void updatePhoneAppCdmaVariables(int subscription) {
+        Log.v(LOG_TAG,"updatePhoneAppCdmaVariables" + subscription);
+        SinglePhone singlePhone = getSinglePhone(subscription);
+
+        if ((singlePhone != null) &&(singlePhone.mPhone.getPhoneType() == Phone.PHONE_TYPE_CDMA)) {
+            cdmaPhoneCallState = singlePhone.mCdmaPhoneCallState;
+            cdmaOtaProvisionData = singlePhone.mCdmaOtaProvisionData;
+            cdmaOtaConfigData = singlePhone.mCdmaOtaConfigData;
+            cdmaOtaScreenState = singlePhone.mCdmaOtaScreenState;
+            cdmaOtaInCallScreenUiState = singlePhone.mCdmaOtaInCallScreenUiState;
+        }
+    }
+
+    private void clearCdmaVariables(int subscription) {
+        SinglePhone singlePhone = getSinglePhone(subscription);
+        singlePhone.clearCdmaVariables();
+        cdmaPhoneCallState = null;
+        cdmaOtaProvisionData = null;
+        cdmaOtaConfigData = null;
+        cdmaOtaScreenState = null;
+        cdmaOtaInCallScreenUiState = null;
+    }
 
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
@@ -636,8 +679,10 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
      * This intent can only be used from within the Phone app, since the
      * InCallScreen is not exported from our AndroidManifest.
      */
-    /* package */ static Intent createInCallIntent() {
+    /* package */ static Intent createInCallIntent(int subscription) {
+        Log.d(LOG_TAG, "createInCallIntent subscription:");
         Intent intent = new Intent(Intent.ACTION_MAIN, null);
+        intent.putExtra("Subscription", subscription);
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK
                 | Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
                 | Intent.FLAG_ACTIVITY_NO_USER_ACTION);
@@ -651,7 +696,7 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
      * comes up.
      */
     /* package */ static Intent createInCallIntent(boolean showDialpad) {
-        Intent intent = createInCallIntent();
+        Intent intent = createInCallIntent(getDefaultSubscription());
         intent.putExtra(InCallScreen.SHOW_DIALPAD_EXTRA, showDialpad);
         return intent;
     }
@@ -665,12 +710,17 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
      */
     private void displayCallScreen() {
         if (VDBG) Log.d(LOG_TAG, "displayCallScreen()...");
-        startActivity(createInCallIntent());
+        startActivity(createInCallIntent(mCM.getPhoneInCall().getSubscription()));
         Profiler.callScreenRequested();
     }
 
     boolean isSimPinEnabled() {
         return mIsSimPinEnabled;
+    }
+ 
+    boolean isSimPinEnabled(int subscription) {
+        SinglePhone singlePhone = getSinglePhone(subscription);
+        return singlePhone.mIsSimPinEnabled;
     }
 
     boolean authenticateAgainstCachedSimPin(String pin) {
@@ -683,6 +733,10 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
 
     void setInCallScreenInstance(InCallScreen inCallScreen) {
         mInCallScreen = inCallScreen;
+    }
+
+    InCallScreen getInCallScreen() {
+        return mInCallScreen;
     }
 
     /**
@@ -710,7 +764,7 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
      * For OTA Call, it call InCallScreen api to handle OTA Call End scenario
      * to display OTA Call End screen.
      */
-    void dismissCallScreen() {
+    void dismissCallScreen(Phone phone) {
         if (mInCallScreen != null) {
             if ((phone.getPhoneType() == Phone.PHONE_TYPE_CDMA) &&
                     (mInCallScreen.isOtaCallInActiveState()
@@ -848,7 +902,7 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
             return;
         }
 
-        if(SystemProperties.getInt("proximity.incall.ignore", 0) == 0)
+        if (SystemProperties.getInt("proximity.incall.ignore", 0) == 0)
         {
             // stick with default timeout if we are using the proximity sensor
             if (proximitySensorModeEnabled()) {
@@ -856,7 +910,7 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
             }
         }
         else
-            if(DBG) Log.d(LOG_TAG, "Ignore proximity sensor when determining 'In Call' Screen timeout.");
+            if (DBG) Log.d(LOG_TAG, "Ignore proximity sensor when determining 'In Call' Screen timeout.");
 
         mScreenTimeoutDuration = duration;
         updatePokeLock();
@@ -1246,8 +1300,8 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
         }
     }
 
-    /* package */ Phone.State getPhoneState() {
-        return mLastPhoneState;
+    /* package */ Phone.State getPhoneState(int subscription) {
+        return getSinglePhone(subscription).mLastPhoneState;
     }
 
     /**
@@ -1264,34 +1318,27 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
 
     private void onMMIComplete(AsyncResult r) {
         if (VDBG) Log.d(LOG_TAG, "onMMIComplete()...");
+        Phone localPhone = null;
         MmiCode mmiCode = (MmiCode) r.result;
-        PhoneUtils.displayMMIComplete(phone, getInstance(), mmiCode, null, null);
+        if (r.userObj != null ) {
+            localPhone = (Phone)r.userObj;
+        }
+        PhoneUtils.displayMMIComplete(localPhone, getInstance(), mmiCode, null, null);
     }
 
-    private void initForNewRadioTechnology() {
+    private void initForNewRadioTechnology(int subscription) {
         if (DBG) Log.d(LOG_TAG, "initForNewRadioTechnology...");
+        SinglePhone singlePhone = getSinglePhone(subscription);
 
-        if (phone.getPhoneType() == Phone.PHONE_TYPE_CDMA) {
-            // Create an instance of CdmaPhoneCallState and initialize it to IDLE
-            cdmaPhoneCallState = new CdmaPhoneCallState();
-            cdmaPhoneCallState.CdmaPhoneCallStateInit();
+        Phone phone = singlePhone.mPhone;
 
-            //create instances of CDMA OTA data classes
-            if (cdmaOtaProvisionData == null) {
-                cdmaOtaProvisionData = new OtaUtils.CdmaOtaProvisionData();
-            }
-            if (cdmaOtaConfigData == null) {
-                cdmaOtaConfigData = new OtaUtils.CdmaOtaConfigData();
-            }
-            if (cdmaOtaScreenState == null) {
-                cdmaOtaScreenState = new OtaUtils.CdmaOtaScreenState();
-            }
-            if (cdmaOtaInCallScreenUiState == null) {
-                cdmaOtaInCallScreenUiState = new OtaUtils.CdmaOtaInCallScreenUiState();
-            }
-        } else {
-            clearOtaState();
+        if (singlePhone.mPhone.getPhoneType() == Phone.PHONE_TYPE_CDMA) {
+           // Create an instance of CdmaPhoneCallState and initialize it to IDLE
+           singlePhone.initializeCdmaVariables();
+           updatePhoneAppCdmaVariables(subscription);
+           clearOtaState();
         }
+
 	clearInCallScreenMode();
 
         ringer.updateRingerContextAfterRadioTechnologyChange(this.phone);
@@ -1416,6 +1463,9 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
         @Override
         public void onReceive(Context context, Intent intent) {
             String action = intent.getAction();
+            Log.v(LOG_TAG,"Action intent recieved:"+action);
+            //gets the subscription information ( "0" or "1")
+            int subscription = intent.getIntExtra("phone_subscription", getDefaultSubscription());
             if (action.equals(Intent.ACTION_AIRPLANE_MODE_CHANGED)) {
                 // When airplane mode is selected/deselected from settings
                 // AirplaneModeEnabler sets the value of extra "state" to
@@ -1423,7 +1473,10 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
                 // disabled and broadcasts the intent. setRadioPower uses
                 // true if airplane mode is disabled and false if enabled.
                 boolean enabled = intent.getBooleanExtra("state",false);
-                phone.setRadioPower(!enabled);
+                for (int i = 0; i < TelephonyManager.getPhoneCount(); i++) {
+                    getPhone(i).setRadioPower(!enabled);
+                }
+
             } else if (action.equals(BluetoothHeadset.ACTION_STATE_CHANGED)) {
                 mBluetoothHeadsetState = intent.getIntExtra(BluetoothHeadset.EXTRA_STATE,
                                                             BluetoothHeadset.STATE_ERROR);
@@ -1480,6 +1533,12 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
 
                 String iccState = intent.getStringExtra(IccCard.INTENT_KEY_ICC_STATE);
                 String reason = intent.getStringExtra(IccCard.INTENT_KEY_LOCKED_REASON);
+                if (IccCard.INTENT_VALUE_LOCKED_ON_PUK.equals(reason)) {
+                    getSinglePhone(subscription).mIsSimPukLocked = true;
+                } else {
+                    getSinglePhone(subscription).mIsSimPukLocked = false;
+                }
+
                 if ((reason != null) && (IccCard.INTENT_VALUE_ICC_LOCKED.equals(iccState))) {
                     if (getResources().getBoolean(R.bool.ignore_perso_locked_events)) {
                         // Some products don't have the concept of a perso lock.
@@ -1494,8 +1553,10 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
                 Log.d(LOG_TAG, "Radio technology switched. Now " + newPhone + " is active.");
                 mHandler.sendEmptyMessage(EVENT_TECHNOLOGY_CHANGED);
             } else if (action.equals(TelephonyIntents.ACTION_SERVICE_STATE_CHANGED)) {
-                handleServiceStateChanged(intent);
+                Phone phone = getPhone(subscription);
+                handleServiceStateChanged(intent, phone);
             } else if (action.equals(TelephonyIntents.ACTION_EMERGENCY_CALLBACK_MODE_CHANGED)) {
+                Phone phone = getPhone(subscription);
                 if (phone.getPhoneType() == Phone.PHONE_TYPE_CDMA) {
                     Log.d(LOG_TAG, "Emergency Callback Mode arrived in PhoneApp.");
                     // Start Emergency Callback Mode service
@@ -1521,9 +1582,13 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
             } else if (action.equals(AudioManager.RINGER_MODE_CHANGED_ACTION)) {
                 int ringerMode = intent.getIntExtra(AudioManager.EXTRA_RINGER_MODE,
                         AudioManager.RINGER_MODE_NORMAL);
-                if(ringerMode == AudioManager.RINGER_MODE_SILENT) {
+                if (ringerMode == AudioManager.RINGER_MODE_SILENT) {
                     notifier.silenceRinger();
                 }
+            } else if (action.equals(TelephonyIntents.ACTION_DEFAULT_SUBSCRIPTION_CHANGED)) {
+                Log.d(LOG_TAG, "Default subscription changed, subscription: " + subscription);
+                mDefaultSubscription = subscription;
+                setDefaultPhone(subscription);
             }
         }
     }
@@ -1570,9 +1635,14 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
         }
     }
 
-    private void handleServiceStateChanged(Intent intent) {
 
-        // This function used to handle updating EriTextWidgetProvider
+    private void handleServiceStateChanged(Intent intent, Phone phone) {
+        /**
+         * This used to handle updating EriTextWidgetProvider this routine
+         * and and listening for ACTION_SERVICE_STATE_CHANGED intents could
+         * be removed. But leaving just in case it might be needed in the near
+         * future.
+         */
 
         // If service just returned, start sending out the queued messages
         ServiceState ss = ServiceState.newFromBundle(intent.getExtras());
@@ -1584,7 +1654,7 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
 
         if (ss != null) {
             state = ss.getState();
-            NotificationMgr.getDefault().updateNetworkSelection(state);
+            NotificationMgr.getDefault().updateNetworkSelection(state, phone);
             switch (state) {
                 case ServiceState.STATE_OUT_OF_SERVICE:
                 case ServiceState.STATE_POWER_OFF:
@@ -1709,39 +1779,39 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
     private void showDepersonalizationScreen(String reason) {
         int subtype = IccDepersonalizationConstants.ICC_SIM_NETWORK;
 
-        if(IccCard.INTENT_VALUE_LOCKED_NETWORK.equals(reason)) {
+        if (IccCard.INTENT_VALUE_LOCKED_NETWORK.equals(reason)) {
            //Network Depersonalization is presently handled
            //using dedicated Notification.
            Log.i(LOG_TAG,"Ignoring SIM NETWORK Depersonalization "
                  + "since this is handled differently");
-        } else if(IccCard.INTENT_VALUE_LOCKED_NETWORK_SUBSET.equals(reason)) {
+        } else if (IccCard.INTENT_VALUE_LOCKED_NETWORK_SUBSET.equals(reason)) {
            Log.i(LOG_TAG,"SIM NETWORK SUBSET Depersonalization");
            subtype = IccDepersonalizationConstants.ICC_SIM_NETWORK_SUBSET;
-        } else if(IccCard.INTENT_VALUE_LOCKED_CORPORATE.equals(reason)) {
+        } else if (IccCard.INTENT_VALUE_LOCKED_CORPORATE.equals(reason)) {
            Log.i(LOG_TAG,"SIM CORPORATE Depersonalization");
            subtype = IccDepersonalizationConstants.ICC_SIM_CORPORATE;
-        } else if(IccCard.INTENT_VALUE_LOCKED_SERVICE_PROVIDER.equals(reason)) {
+        } else if (IccCard.INTENT_VALUE_LOCKED_SERVICE_PROVIDER.equals(reason)) {
            Log.i(LOG_TAG,"SIM SERVICE PROVIDER Depersonalization");
            subtype = IccDepersonalizationConstants.ICC_SIM_SERVICE_PROVIDER;
-        } else if(IccCard.INTENT_VALUE_LOCKED_SIM.equals(reason)) {
+        } else if (IccCard.INTENT_VALUE_LOCKED_SIM.equals(reason)) {
            Log.i(LOG_TAG,"SIM SIM Depersonalization");
            subtype = IccDepersonalizationConstants.ICC_SIM_SIM;
-        } else if(IccCard.INTENT_VALUE_LOCKED_RUIM_NETWORK1.equals(reason)) {
+        } else if (IccCard.INTENT_VALUE_LOCKED_RUIM_NETWORK1.equals(reason)) {
            Log.i(LOG_TAG,"RUIM NETWORK1 Depersonalization");
            subtype = IccDepersonalizationConstants.ICC_RUIM_NETWORK1;
-        } else if(IccCard.INTENT_VALUE_LOCKED_RUIM_NETWORK2.equals(reason)) {
+        } else if (IccCard.INTENT_VALUE_LOCKED_RUIM_NETWORK2.equals(reason)) {
            Log.i(LOG_TAG,"RUIM NETWORK2 Depersonalization");
            subtype = IccDepersonalizationConstants.ICC_RUIM_NETWORK2;
-        } else if(IccCard.INTENT_VALUE_LOCKED_RUIM_HRPD.equals(reason)) {
+        } else if (IccCard.INTENT_VALUE_LOCKED_RUIM_HRPD.equals(reason)) {
            Log.i(LOG_TAG,"RUIM HRPD Depersonalization");
            subtype = IccDepersonalizationConstants.ICC_RUIM_HRPD;
-        } else if(IccCard.INTENT_VALUE_LOCKED_RUIM_CORPORATE.equals(reason)) {
+        } else if (IccCard.INTENT_VALUE_LOCKED_RUIM_CORPORATE.equals(reason)) {
            Log.i(LOG_TAG,"RUIM CORPORATE Depersonalization");
            subtype = IccDepersonalizationConstants.ICC_RUIM_CORPORATE;
-        } else if(IccCard.INTENT_VALUE_LOCKED_RUIM_SERVICE_PROVIDER.equals(reason)) {
+        } else if (IccCard.INTENT_VALUE_LOCKED_RUIM_SERVICE_PROVIDER.equals(reason)) {
            Log.i(LOG_TAG,"RUIM SERVICE PROVIDER Depersonalization");
            subtype = IccDepersonalizationConstants.ICC_RUIM_SERVICE_PROVIDER;
-        } else if(IccCard.INTENT_VALUE_LOCKED_RUIM_RUIM.equals(reason)) {
+        } else if (IccCard.INTENT_VALUE_LOCKED_RUIM_RUIM.equals(reason)) {
            Log.i(LOG_TAG,"RUIM RUIM Depersonalization");
            subtype = IccDepersonalizationConstants.ICC_RUIM_RUIM;
         } else {
@@ -1754,4 +1824,94 @@ public class PhoneApp extends Application implements AccelerometerListener.Orien
             dpPanel.show();
         }
     }
+
+    // gets the SinglePhone corresponding to a subscription
+    private SinglePhone getSinglePhone(int subscription) {
+        try {
+            return mSinglePhones.get(subscription);
+        } catch (IndexOutOfBoundsException e) {
+            Log.e(LOG_TAG,"subscripton Index out of bounds "+e);
+            return null;
+        }
+    }
+
+    // gets the Default Phone
+    static Phone getDefaultPhone() {
+        PhoneApp app = PhoneApp.getInstance();
+        return app.getPhone(getDefaultSubscription());
+    }
+
+    // gets the Phone correspoding to a subscription
+    static Phone getPhone(int subscription) {
+        PhoneApp app = PhoneApp.getInstance();
+        SinglePhone singlePhone= app.getSinglePhone(subscription);
+        if (singlePhone != null) {
+            return singlePhone.mPhone;
+        } else {
+            Log.w(LOG_TAG, "singlePhone object is null returning default phone");
+            return app.phone;
+        }
+    }
+
+    boolean isSimPukLocked(int subscription) {
+        return getSinglePhone(subscription).mIsSimPukLocked;
+    }
+
+    /**
+      * Get the subscription that has service
+      */
+    public int getVoiceSubscriptionInService() {
+        int voiceSub = getVoiceSubscription();
+        int sub = voiceSub;
+        for (int i = 0; i < TelephonyManager.getPhoneCount(); i++) {
+            Phone phone = getPhone(i);
+            int ss = phone.getServiceState().getState();
+            if ((ss == ServiceState.STATE_IN_SERVICE)
+                    || (ss == ServiceState.STATE_EMERGENCY_ONLY)) {
+                sub = i;
+                if (sub == voiceSub) break;
+            }
+        }
+        return sub;
+    }
+
+    CdmaPhoneCallState getCdmaPhoneCallState (int subscription) {
+        SinglePhone singlePhone = getSinglePhone(subscription);
+        if (singlePhone == null) {
+            return null;
+        }
+        return singlePhone.mCdmaPhoneCallState;
+    }
+
+    //Sets the default phoneApp variables
+    void setDefaultPhone(int subscription){
+        //When default phone dynamically changes need to handle
+        SinglePhone singlePhone = getSinglePhone(subscription);
+        phone = singlePhone.mPhone;
+        mPhoneType = singlePhone.mPhoneType;
+        mLastPhoneState = singlePhone.mLastPhoneState;
+        updatePhoneAppCdmaVariables(subscription);
+        mDefaultSubscription = subscription;
+    }
+    /* Gets the default subscription */
+    public static int getDefaultSubscription() {
+        return PhoneFactory.getDefaultSubscription();
+    }
+
+    /* Gets User preferred Voice subscription setting*/
+    public static int getVoiceSubscription() {
+        return PhoneFactory.getVoiceSubscription();
+    }
+
+    /* Gets User preferred Data subscription setting*/
+    public static int getDataSubscription() {
+        return PhoneFactory.getDataSubscription();
+    }
+
+    /* Gets User preferred SMS subscription setting*/
+    public static int getSMSSubscription() {
+        return PhoneFactory.getSMSSubscription();
+    }
+
+
 }

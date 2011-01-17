@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Copyright (C) 2008 The Android Open Source Project
-     Copyright (c) 2010-2011, Code Aurora Forum. All rights reserved.
+<!-- Copyright (c) 2010-2011, Code Aurora Forum. All rights reserved.
 
      Licensed under the Apache License, Version 2.0 (the "License");
      you may not use this file except in compliance with the License.
@@ -14,16 +13,18 @@
      See the License for the specific language governing permissions and
      limitations under the License.
 -->
-<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:phone="http://schemas.android.com/apk/res/com.android.phone"
-        android:title="@string/mobile_networks">
 
-    <ListPreference
-        android:key="preferred_network_mode_key"
-        android:title="@string/preferred_network_mode_title"
-        android:summary="@string/preferred_network_mode_summary"
-        android:entries="@array/preferred_network_mode_choices"
-        android:entryValues="@array/preferred_network_mode_values"
-        android:dialogTitle="@string/preferred_network_mode_dialogtitle" />
+<!-- Preference screen for Set Subscription
+-->
+
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:settings="http://schemas.android.com/apk/res/com.android.phone"
+    android:title="@string/set_subscription"
+    android:key="subscr_parent">
+
+<!-- The PreferenceCategory's and CheckBoxPreference's shall be created
+     dynamically as the number of application can be less than or equal
+     to eight per card.
+-->
 
 </PreferenceScreen>

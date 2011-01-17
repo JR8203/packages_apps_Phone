@@ -15,7 +15,6 @@ import android.util.AttributeSet;
 import android.util.Log;
 
 import com.android.internal.telephony.Phone;
-import com.android.internal.telephony.PhoneFactory;
 
 public class CallWaitingCheckBoxPreference extends CheckBoxPreference {
     private static final String LOG_TAG = "CallWaitingCheckBoxPreference";
@@ -27,8 +26,6 @@ public class CallWaitingCheckBoxPreference extends CheckBoxPreference {
 
     public CallWaitingCheckBoxPreference(Context context, AttributeSet attrs, int defStyle) {
         super(context, attrs, defStyle);
-
-        phone = PhoneFactory.getDefaultPhone();
     }
 
     public CallWaitingCheckBoxPreference(Context context, AttributeSet attrs) {
@@ -39,7 +36,12 @@ public class CallWaitingCheckBoxPreference extends CheckBoxPreference {
         this(context, null);
     }
 
-    void init(TimeConsumingPreferenceListener listener, boolean skipReading) {
+    void init(TimeConsumingPreferenceListener listener, boolean skipReading, int subscription) {
+        // Get the selected subscription
+        if (DBG)
+            Log.d(LOG_TAG, "CallWaitingCheckBoxPreference init, subscription :" + subscription);
+        phone = PhoneApp.getPhone(subscription);
+
         tcpListener = listener;
 
         if (!skipReading) {
