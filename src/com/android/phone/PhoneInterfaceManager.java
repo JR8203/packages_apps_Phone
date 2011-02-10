@@ -40,6 +40,7 @@ import com.android.internal.telephony.CallManager;
 import com.android.internal.telephony.TelephonyIntents;
 import com.android.internal.telephony.CommandException;
 import com.android.internal.telephony.Phone.IPVersion;
+import com.android.internal.telephony.ProxyManager;
 
 import java.util.List;
 import java.util.ArrayList;
@@ -63,6 +64,8 @@ public class PhoneInterfaceManager extends ITelephony.Stub {
     private static final int CMD_INVOKE_OEM_RIL_REQUEST = 7;
     private static final int EVENT_INVOKE_OEM_RIL_REQUEST = 8;
     private static final int EVENT_UNSOL_OEM_HOOK_EXT_APP = 9;
+    private static final int CMD_SET_DATA_SUBSCRIPTION = 10;
+    private static final int EVENT_SET_DATA_SUBSCRIPTION_DONE = 11;
 
     PhoneApp mApp;
     Phone mPhone;
@@ -192,6 +195,42 @@ public class PhoneInterfaceManager extends ITelephony.Stub {
                 case EVENT_UNSOL_OEM_HOOK_EXT_APP:
                     ar = (AsyncResult)msg.obj;
                     broadcastUnsolOemHookIntent((byte[])(ar.result));
+                    break;
+
+                case CMD_SET_DATA_SUBSCRIPTION:
+                    request = (MainThreadRequest) msg.obj;
+                    int subscription = (Integer) request.arg1;
+                    onCompleted = obtainMessage(EVENT_SET_DATA_SUBSCRIPTION_DONE, request);
+                    ProxyManager proxyManager = ProxyManager.getInstance();
+                    if (proxyManager != null) {
+                        proxyManager.setDataSubscription(subscription, onCompleted);
+                    } else {
+                        // need to return false;
+                        // Wake up the requesting thread
+                        request.result = false;
+                        synchronized (request) {
+                            request.notifyAll();
+                        }
+                    }
+                    break;
+
+                case EVENT_SET_DATA_SUBSCRIPTION_DONE:
+                    boolean retStatus = false;
+                    ar = (AsyncResult) msg.obj;
+                    request = (MainThreadRequest)ar.userObj;
+
+                    if (ar.exception == null && ar.result != null) {
+                        final ProxyManager.SetDdsResult result = (ProxyManager.SetDdsResult)ar.result;
+                        if (result == ProxyManager.SetDdsResult.SUCCESS) {
+                            retStatus = true;
+                        }
+                    }
+                    request.result = retStatus;
+
+                    // Wake up the requesting thread
+                    synchronized (request) {
+                        request.notifyAll();
+                    }
                     break;
 
                 default:
@@ -1022,5 +1061,14 @@ public class PhoneInterfaceManager extends ITelephony.Stub {
      */
     public int getPreferredDataSubscription() {
         return PhoneApp.getDataSubscription();
+    }
+
+
+    /**
+     * {@hide}
+     * Set Data subscription.
+     */
+    public boolean setPreferredDataSubscription(int subscription) {
+        return (Boolean) sendRequest(CMD_SET_DATA_SUBSCRIPTION, subscription, null);
     }
 }
