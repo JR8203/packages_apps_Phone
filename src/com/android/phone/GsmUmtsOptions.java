@@ -41,26 +41,19 @@ public class GsmUmtsOptions {
     private PreferenceActivity mPrefActivity;
     private PreferenceScreen mPrefScreen;
 
-    private int mSubscription = 0;
-
-    public GsmUmtsOptions(PreferenceActivity prefActivity, PreferenceScreen prefScreen, int subscription) {
+    public GsmUmtsOptions(PreferenceActivity prefActivity, PreferenceScreen prefScreen) {
         mPrefActivity = prefActivity;
         mPrefScreen = prefScreen;
-        mSubscription = subscription;
         create();
     }
 
     protected void create() {
         mPrefActivity.addPreferencesFromResource(R.xml.gsm_umts_options);
         mButtonAPNExpand = (PreferenceScreen) mPrefScreen.findPreference(BUTTON_APN_EXPAND_KEY);
-        mButtonAPNExpand.getIntent().putExtra(Settings.SUBSCRIPTION, mSubscription);
         mButtonOperatorSelectionExpand =
                 (PreferenceScreen) mPrefScreen.findPreference(BUTTON_OPERATOR_SELECTION_EXPAND_KEY);
-        mButtonOperatorSelectionExpand.getIntent().putExtra(Settings.SUBSCRIPTION, mSubscription);
         mButtonPrefer2g = (CheckBoxPreference) mPrefScreen.findPreference(BUTTON_PREFER_2G_KEY);
-        Phone phone = PhoneApp.getPhone(mSubscription);
-        Use2GOnlyCheckBoxPreference.updatePhone(phone);
-        if (phone.getPhoneType() != Phone.PHONE_TYPE_GSM) {
+        if (PhoneFactory.getDefaultPhone().getPhoneType() != Phone.PHONE_TYPE_GSM) {
             log("Not a GSM phone");
             mButtonAPNExpand.setEnabled(false);
             mButtonOperatorSelectionExpand.setEnabled(false);

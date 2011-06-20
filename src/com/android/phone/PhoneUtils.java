@@ -37,7 +37,6 @@ import android.os.Message;
 import android.os.RemoteException;
 import android.os.SystemProperties;
 import android.telephony.PhoneNumberUtils;
-import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.KeyEvent;
@@ -2369,7 +2368,7 @@ public class PhoneUtils {
             Phone phone = getSipPhoneFromUri(cm, primarySipUri);
             if (phone != null) return phone;
         }
-        return PhoneApp.getPhone(PhoneApp.getVoiceSubscription());
+        return cm.getDefaultPhone();
     }
 
     public static Phone getSipPhoneFromUri(CallManager cm, String target) {

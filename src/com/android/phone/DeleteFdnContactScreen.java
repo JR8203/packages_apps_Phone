@@ -1,6 +1,5 @@
 /*
  * Copyright (C) 2006 The Android Open Source Project
- * Copyright (c) 2010-2011, Code Aurora Forum. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -44,9 +43,6 @@ public class DeleteFdnContactScreen extends Activity {
     private static final String INTENT_EXTRA_NUMBER = "number";
 
     private static final int PIN2_REQUEST_CODE = 100;
-    private static final int SUB1 = 0;
-    private static final int SUB2 = 1;
-    private static int mSubscription = 0;
 
     private String mName;
     private String mNumber;
@@ -72,7 +68,6 @@ public class DeleteFdnContactScreen extends Activity {
     protected void onActivityResult(int requestCode, int resultCode,
                                     Intent intent) {
         if (DBG) log("onActivityResult");
-        mSubscription = getIntent().getIntExtra("sub_id", 0);
 
         switch (requestCode) {
             case PIN2_REQUEST_CODE:
@@ -105,8 +100,6 @@ public class DeleteFdnContactScreen extends Activity {
 
     private void deleteContact() {
         StringBuilder buf = new StringBuilder();
-        Uri uri = null;
-
         if (TextUtils.isEmpty(mName)) {
             buf.append("number='");
         } else {
@@ -119,15 +112,7 @@ public class DeleteFdnContactScreen extends Activity {
         buf.append(mPin2);
         buf.append("'");
 
-        if (mSubscription == SUB1) {
-            uri = Uri.parse("content://icc/fdn_sub1");
-        } else if (mSubscription == SUB2) {
-            uri = Uri.parse("content://icc/fdn_sub2");
-        } else {
-            // we should never reach here.
-            if (DBG) log("invalid mSubscription") ;
-            return;
-        }
+        Uri uri = Uri.parse("content://icc/fdn");
 
         mQueryHandler = new QueryHandler(getContentResolver());
         mQueryHandler.startDelete(0, null, uri, buf.toString(), null);

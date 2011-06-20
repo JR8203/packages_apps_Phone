@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2006 The Android Open Source Project
- * Copyright (C) 2010-2011, Code Aurora Forum. All rights reserved
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -63,9 +63,6 @@ import android.widget.LinearLayout;
 import android.widget.SlidingDrawer;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.telephony.TelephonyManager;
-import android.provider.Settings;
-import java.util.ArrayList;
 
 import com.android.internal.telephony.Call;
 import com.android.internal.telephony.CallManager;
@@ -175,7 +172,6 @@ public class InCallScreen extends Activity
     private static final int EVENT_HIDE_PROVIDER_OVERLAY = 121;  // Time to remove the overlay.
     private static final int REQUEST_UPDATE_TOUCH_UI = 122;
 
-    public static final String SUBSCRIPTION = "Subscription";
     //following constants are used for OTA Call
     public static final String ACTION_SHOW_ACTIVATION =
            "com.android.phone.InCallScreen.SHOW_ACTIVATION";
@@ -374,7 +370,7 @@ public class InCallScreen extends Activity
                     break;
 
                 case PhoneApp.MMI_CANCEL:
-                    onMMICancel((Phone)msg.obj);
+                    onMMICancel();
                     break;
 
                 // handle the mmi complete message.
@@ -385,13 +381,11 @@ public class InCallScreen extends Activity
                     // Check the code to see if the request is ready to
                     // finish, this includes any MMI state that is not
                     // PENDING.
-                    AsyncResult ar = (AsyncResult) msg.obj;
-                    MmiCode mmiCode = (MmiCode) ar.result;
-                    Phone phone = (Phone) mmiCode.getPhone();
+                    MmiCode mmiCode = (MmiCode) ((AsyncResult) msg.obj).result;
                     // if phone is a CDMA phone display feature code completed message
-                    int phoneType = phone.getPhoneType();
+                    int phoneType = mPhone.getPhoneType();
                     if (phoneType == Phone.PHONE_TYPE_CDMA) {
-                        PhoneUtils.displayMMIComplete(phone, app, mmiCode, null, null);
+                        PhoneUtils.displayMMIComplete(mPhone, app, mmiCode, null, null);
                     } else if (phoneType == Phone.PHONE_TYPE_GSM) {
                         if (mmiCode.getState() != MmiCode.State.PENDING) {
                             if (DBG) log("Got MMI_COMPLETE, finishing InCallScreen...");
@@ -413,7 +407,7 @@ public class InCallScreen extends Activity
                     break;
 
                 case DELAYED_CLEANUP_AFTER_DISCONNECT:
-                    delayedCleanupAfterDisconnect((Phone)msg.obj);
+                    delayedCleanupAfterDisconnect();
                     break;
 
                 case DISMISS_MENU:
@@ -532,7 +526,6 @@ public class InCallScreen extends Activity
     protected void onCreate(Bundle icicle) {
         Log.i(LOG_TAG, "onCreate()...  this = " + this);
 
-        int subscription = 0;
         Profiler.callScreenOnCreate();
 
         super.onCreate(icicle);
@@ -540,15 +533,9 @@ public class InCallScreen extends Activity
         final PhoneApp app = PhoneApp.getInstance();
         app.setInCallScreenInstance(this);
 
-        subscription = getIntent().getIntExtra(SUBSCRIPTION,
-                    PhoneApp.getDefaultSubscription());
-        log("onCreate Subscription: " + subscription);
-        Phone phone = PhoneApp.getPhone(subscription);
-
         // set this flag so this activity will stay in front of the keyguard
         int flags = WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED;
-        Phone.State ps = app.getPhoneState(subscription);
-        if (ps == Phone.State.OFFHOOK) {
+        if (app.getPhoneState() == Phone.State.OFFHOOK) {
             // While we are in call, the in-call screen should dismiss the keyguard.
             // This allows the user to press Home to go directly home without going through
             // an insecure lock screen.
@@ -671,8 +658,7 @@ public class InCallScreen extends Activity
         mIsForegroundActivity = true;
 
         final PhoneApp app = PhoneApp.getInstance();
-        // Get the active phone pbject.
-        Phone phone = mCM.getPhoneInCall();
+
         app.disableStatusBar();
 
         // Touch events are never considered "user activity" while the
@@ -721,11 +707,11 @@ public class InCallScreen extends Activity
 
         takeKeyEvents(true);
 
-        boolean phoneIsCdma = (phone.getPhoneType() == Phone.PHONE_TYPE_CDMA);
+        boolean phoneIsCdma = (mPhone.getPhoneType() == Phone.PHONE_TYPE_CDMA);
 
         boolean inOtaCall = false;
         if (phoneIsCdma) {
-            inOtaCall = initOtaState(phone);
+            inOtaCall = initOtaState();
         }
         if (!inOtaCall) {
             // Always start off in NORMAL mode
@@ -789,7 +775,7 @@ public class InCallScreen extends Activity
         //
         // But we need to do something special if we're coming
         // to the foreground while an incoming call is ringing:
-        if (phone.getState() == Phone.State.RINGING) {
+        if (mCM.getState() == Phone.State.RINGING) {
             // If the phone is ringing, we *should* already be holding a
             // full wake lock (which we would have acquired before
             // firing off the intent that brought us here; see
@@ -1051,8 +1037,6 @@ public class InCallScreen extends Activity
      */
     public void endInCallScreenSession() {
         if (DBG) log("endInCallScreenSession()...");
-        // Do not end the session if a call is on progress.
-        if (mCM.hasActiveFgCall() || mCM.hasActiveBgCall()) return;
         moveTaskToBack(true);
         setInCallScreenMode(InCallScreenMode.UNDEFINED);
     }
@@ -1163,13 +1147,11 @@ public class InCallScreen extends Activity
         // an aborted "Add Call" request), so we should let the mute state
         // be handled by the PhoneUtils phone state change handler.
         final PhoneApp app = PhoneApp.getInstance();
-        int subscription = intent.getIntExtra(SUBSCRIPTION, PhoneApp.getDefaultSubscription());
-        Phone phone = app.getPhone(subscription);
         // If OTA Activation is configured for Power up scenario, then
         // InCallScreen UI started with Intent of ACTION_SHOW_ACTIVATION
         // to show OTA Activation screen at power up.
         if ((action.equals(ACTION_SHOW_ACTIVATION))
-                && ((phone.getPhoneType() == Phone.PHONE_TYPE_CDMA))) {
+                && ((mPhone.getPhoneType() == Phone.PHONE_TYPE_CDMA))) {
             setInCallScreenMode(InCallScreenMode.OTA_NORMAL);
             if ((app.cdmaOtaProvisionData != null)
                     && (!app.cdmaOtaProvisionData.isOtaCallIntentProcessed)) {
@@ -1184,8 +1166,6 @@ public class InCallScreen extends Activity
             return InCallInitStatus.SUCCESS;
         } else if (action.equals(Intent.ACTION_CALL)
                 || action.equals(Intent.ACTION_CALL_EMERGENCY)) {
-            log("Attempting call on sub: " + subscription);
-            setPhone(phone);
             app.setRestoreMuteOnInCallResume(false);
 
             // If a provider is used, extract the info to build the
@@ -1376,7 +1356,7 @@ public class InCallScreen extends Activity
         final boolean hasActiveCall = mCM.hasActiveFgCall();
         final boolean hasHoldingCall = mCM.hasActiveBgCall();
 
-        int phoneType = mCM.getFgPhone().getPhoneType();
+        int phoneType = mPhone.getPhoneType();
         if (phoneType == Phone.PHONE_TYPE_CDMA) {
             // The green CALL button means either "Answer", "Swap calls/On Hold", or
             // "Add to 3WC", depending on the current state of the Phone.
@@ -1750,7 +1730,6 @@ public class InCallScreen extends Activity
     private void onDisconnect(AsyncResult r) {
         Connection c = (Connection) r.result;
         Connection.DisconnectCause cause = c.getDisconnectCause();
-        Phone phone = c.getCall().getPhone();
         if (DBG) log("onDisconnect: " + c + ", cause=" + cause);
 
         // Stash away a copy of the "current intent" in case we need it
@@ -1759,7 +1738,7 @@ public class InCallScreen extends Activity
 
         boolean currentlyIdle = !phoneIsInUse();
         int autoretrySetting = AUTO_RETRY_OFF;
-        boolean phoneIsCdma = (phone.getPhoneType() == Phone.PHONE_TYPE_CDMA);
+        boolean phoneIsCdma = (mPhone.getPhoneType() == Phone.PHONE_TYPE_CDMA);
         if (phoneIsCdma) {
             // Get the Auto-retry setting only if Phone State is IDLE,
             // else let it stay as AUTO_RETRY_OFF
@@ -1950,7 +1929,7 @@ public class InCallScreen extends Activity
             // (This is basically the same "delayed cleanup" we do below,
             // just with zero delay.  Since the Phone is currently idle,
             // this call is guaranteed to immediately finish this activity.)
-            delayedCleanupAfterDisconnect(c.getCall().getPhone());
+            delayedCleanupAfterDisconnect();
         } else {
             if (VDBG) log("- onDisconnect: delayed bailout...");
             // Stay on the in-call screen for now.  (Either the phone is
@@ -2005,7 +1984,7 @@ public class InCallScreen extends Activity
             // higher preference. At this time framework sends a disconnect for the Out going
             // call connection hence we should *not* bring down the InCallScreen as the Phone
             // State would be RINGING
-            if (phone.getPhoneType() == Phone.PHONE_TYPE_CDMA) {
+            if (mPhone.getPhoneType() == Phone.PHONE_TYPE_CDMA) {
                 if (!currentlyIdle) {
                     // Clean up any connections in the DISCONNECTED state.
                     // This is necessary cause in CallCollision the foreground call might have
@@ -2028,9 +2007,8 @@ public class InCallScreen extends Activity
                     (cause == Connection.DisconnectCause.LOCAL)
                     ? CALL_ENDED_SHORT_DELAY : CALL_ENDED_LONG_DELAY;
             mHandler.removeMessages(DELAYED_CLEANUP_AFTER_DISCONNECT);
-            mHandler.sendMessageDelayed(mHandler.obtainMessage(
-                                        DELAYED_CLEANUP_AFTER_DISCONNECT, phone),
-                                        callEndedDisplayDelay);
+            mHandler.sendEmptyMessageDelayed(DELAYED_CLEANUP_AFTER_DISCONNECT,
+                                             callEndedDisplayDelay);
         }
 
         // Remove 3way timer (only meaningful for CDMA)
@@ -2042,7 +2020,6 @@ public class InCallScreen extends Activity
      */
     private void onMMIInitiate(AsyncResult r) {
         if (VDBG) log("onMMIInitiate()...  AsyncResult r = " + r);
-        Phone phone = (Phone) r.userObj;
 
         // Watch out: don't do this if we're not the foreground activity,
         // mainly since in the Dialog.show() might fail if we don't have a
@@ -2063,7 +2040,7 @@ public class InCallScreen extends Activity
         MmiCode mmiCode = (MmiCode) r.result;
         if (VDBG) log("  - MmiCode: " + mmiCode);
 
-        Message message = Message.obtain(mHandler, PhoneApp.MMI_CANCEL, phone);
+        Message message = Message.obtain(mHandler, PhoneApp.MMI_CANCEL);
         mMmiStartedDialog = PhoneUtils.displayMMIInitiate(this, mmiCode,
                                                           message, mMmiStartedDialog);
     }
@@ -2074,11 +2051,11 @@ public class InCallScreen extends Activity
      * @see onMMIInitiate
      * @see PhoneUtils.cancelMmiCode
      */
-    private void onMMICancel(Phone phone) {
+    private void onMMICancel() {
         if (VDBG) log("onMMICancel()...");
 
         // First of all, cancel the outstanding MMI code (if possible.)
-        PhoneUtils.cancelMmiCode(phone);
+        PhoneUtils.cancelMmiCode(mPhone);
 
         // Regardless of whether the current MMI code was cancelable, the
         // PhoneApp will get an MMI_COMPLETE event very soon, which will
@@ -2885,7 +2862,7 @@ public class InCallScreen extends Activity
      * *don't* exit the in-call screen, but we at least turn off the
      * backlight (which we turned on in onDisconnect().)
      */
-    private void delayedCleanupAfterDisconnect(Phone phone) {
+    private void delayedCleanupAfterDisconnect() {
         if (VDBG) log("delayedCleanupAfterDisconnect()...  Phone state = " + mCM.getState());
 
         // Clean up any connections in the DISCONNECTED state.
@@ -2926,7 +2903,7 @@ public class InCallScreen extends Activity
 
                 if (VDBG) log("- Post-call behavior:");
                 if (VDBG) log("  - mLastDisconnectCause = " + mLastDisconnectCause);
-                if (VDBG) log("  - isPhoneStateRestricted() = " + isPhoneStateRestricted(phone));
+                if (VDBG) log("  - isPhoneStateRestricted() = " + isPhoneStateRestricted());
 
                 // DisconnectCause values in the most common scenarios:
                 // - INCOMING_MISSED: incoming ringing call times out, or the
@@ -2940,7 +2917,7 @@ public class InCallScreen extends Activity
 
                 if ((mLastDisconnectCause != Connection.DisconnectCause.INCOMING_MISSED)
                         && (mLastDisconnectCause != Connection.DisconnectCause.INCOMING_REJECTED)
-                        && !isPhoneStateRestricted(phone)) {
+                        && !isPhoneStateRestricted()) {
                     if (VDBG) log("- Show Call Log after disconnect...");
                     final Intent intent = PhoneApp.createCallLogIntent();
                     intent.addFlags(Intent.FLAG_ACTIVITY_NO_ANIMATION);
@@ -3508,15 +3485,13 @@ public class InCallScreen extends Activity
                     bailOutAfterErrorDialog();
                 }};
         } else {
-            int sub = PhoneApp.getVoiceSubscription();
-            final Phone phone = PhoneApp.getPhone(sub);
             clickListener = new DialogInterface.OnClickListener() {
                 public void onClick(DialogInterface dialog, int which) {
-                    delayedCleanupAfterDisconnect(phone);
+                    delayedCleanupAfterDisconnect();
                 }};
             cancelListener = new OnCancelListener() {
                 public void onCancel(DialogInterface dialog) {
-                    delayedCleanupAfterDisconnect(phone);
+                    delayedCleanupAfterDisconnect();
                 }};
         }
 
@@ -4202,7 +4177,7 @@ public class InCallScreen extends Activity
     /**
      * @return true if we're in restricted / emergency dialing only mode.
      */
-    public boolean isPhoneStateRestricted(Phone phone) {
+    public boolean isPhoneStateRestricted() {
         // TODO:  This needs to work IN TANDEM with the KeyGuardViewMediator Code.
         // Right now, it looks like the mInputRestricted flag is INTERNAL to the
         // KeyGuardViewMediator and SPECIFICALLY set to be FALSE while the emergency
@@ -4210,7 +4185,7 @@ public class InCallScreen extends Activity
         // Having the InCallScreen judge the state of the device from this flag
         // becomes meaningless since it is always false for us.  The mediator should
         // have an additional API to let this app know that it should be restricted.
-        int serviceState = phone.getServiceState().getState();
+        int serviceState = mCM.getServiceState();
         return ((serviceState == ServiceState.STATE_EMERGENCY_ONLY) ||
                 (serviceState == ServiceState.STATE_OUT_OF_SERVICE) ||
                 (PhoneApp.getInstance().getKeyguardManager().inKeyguardRestrictedInputMode()));
@@ -4832,9 +4807,7 @@ public class InCallScreen extends Activity
             return false;
         }
 
-        int sub = intent.getIntExtra(SUBSCRIPTION, PhoneApp.getDefaultSubscription());
-        Phone phone = PhoneApp.getPhone(sub);
-        if (!TelephonyCapabilities.supportsOtasp(phone)) {
+        if (!TelephonyCapabilities.supportsOtasp(mCM.getDefaultPhone())) {
             return false;
         }
 
@@ -4866,7 +4839,7 @@ public class InCallScreen extends Activity
                 if (DBG) log("Error retrieving number using the api getInitialNumber()");
                 return false;
             }
-            if (phone.isOtaSpNumber(number)) {
+            if (mPhone.isOtaSpNumber(number)) {
                 if (DBG) log("checkIsOtaCall action ACTION_CALL, it is valid OTA number");
                 isOtaCall = true;
             }
@@ -4914,10 +4887,10 @@ public class InCallScreen extends Activity
      *
      * @return: true if we are in an OtaCall
      */
-    private boolean initOtaState(Phone phone) {
+    private boolean initOtaState() {
         boolean inOtaCall = false;
 
-        if (TelephonyCapabilities.supportsOtasp(phone)) {
+        if (TelephonyCapabilities.supportsOtasp(mCM.getDefaultPhone())) {
             final PhoneApp app = PhoneApp.getInstance();
 
             if ((app.cdmaOtaScreenState == null) || (app.cdmaOtaProvisionData == null)) {

@@ -1,6 +1,5 @@
 /*
  * Copyright (C) 2008 The Android Open Source Project
- * Copyright (c) 2010-2011, Code Aurora Forum. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -29,7 +28,6 @@ import android.provider.Settings;
 import android.telephony.ServiceState;
 import android.util.Log;
 import android.view.WindowManager;
-import android.util.Log;
 
 import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.PhoneFactory;
@@ -50,13 +48,12 @@ import com.android.internal.telephony.PhoneFactory;
  * EMERGENCY_CALL_RETRY_KEY to convey information about the current state.
  */
 public class EmergencyCallHandler extends Activity {
-    private static final String LOG_TAG = "EmergencyCallHandler";
+    private static final String TAG = "EmergencyCallHandler";
+    private static final boolean DBG = true;  // OK to have this on by default
+
     /** the key used to get the count from our Intent's extra(s) */
     public static final String EMERGENCY_CALL_RETRY_KEY = "emergency_call_retry_count";
     
-    /** the key used to specify subscription to be used for emergency calls */
-    public static final String SUBSCRIPTION = "Subscription";
-
     /** count indicating an initial attempt at the call should be made. */
     public static final int INITIAL_ATTEMPT = -1;
     
@@ -172,10 +169,7 @@ public class EmergencyCallHandler extends Activity {
         if (retryCount == INITIAL_ATTEMPT) {
             // place the number of pending retries in the intent.
             eci.intent.putExtra(EMERGENCY_CALL_RETRY_KEY, NUMBER_OF_RETRIES);
-            int sub = PhoneApp.getInstance().getVoiceSubscriptionInService();
-            eci.intent.putExtra(SUBSCRIPTION, sub);
-            Log.d(LOG_TAG, "Attempting emergency call on sub :" + sub);
-
+            
             // turn the radio on and listen for it to complete.
             phone.registerForServiceStateChanged(sHandler, 
                     EVENT_SERVICE_STATE_CHANGED, eci);

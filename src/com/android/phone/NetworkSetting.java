@@ -219,11 +219,7 @@ public class NetworkSetting extends PreferenceActivity
 
         addPreferencesFromResource(R.xml.carrier_select);
 
-        int subscription = getIntent().getIntExtra(Settings.SUBSCRIPTION, 0);
-        log("onCreate subscription :" + subscription);
-        mPhone = PhoneApp.getPhone(subscription);
-        Intent intent = new Intent(this, NetworkQueryService.class);
-        intent.putExtra(Settings.SUBSCRIPTION, subscription);
+        mPhone = PhoneApp.getInstance().phone;
 
         mNetworkList = (PreferenceGroup) getPreferenceScreen().findPreference(LIST_NETWORKS_KEY);
         mNetworkMap = new HashMap<Preference, NetworkInfo>();
@@ -236,7 +232,7 @@ public class NetworkSetting extends PreferenceActivity
         // long as startService is called) until a stopservice request is made.  Since
         // we want this service to just stay in the background until it is killed, we
         // don't bother stopping it from our end.
-        startService (intent);
+        startService (new Intent(this, NetworkQueryService.class));
         bindService (new Intent(this, NetworkQueryService.class), mNetworkQueryServiceConnection,
                 Context.BIND_AUTO_CREATE);
     }

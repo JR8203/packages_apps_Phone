@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Copyright (C) 2008 The Android Open Source Project
-     Copyright (c) 2010-2011, Code Aurora Forum. All rights reserved.
 
      Licensed under the Apache License, Version 2.0 (the "License");
      you may not use this file except in compliance with the License.
@@ -17,6 +16,29 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:phone="http://schemas.android.com/apk/res/com.android.phone"
         android:title="@string/mobile_networks">
+
+    <CheckBoxPreference
+        android:key="button_data_enabled_key"
+        android:title="@string/data_enabled"
+        android:persistent="false"
+        android:summary="@string/data_enable_summary"/>
+
+    <CheckBoxPreference
+        android:key="button_roaming_key"
+        android:title="@string/roaming"
+        android:persistent="false"
+        android:summaryOn="@string/roaming_enable"
+        android:summaryOff="@string/roaming_disable"/>
+
+    <PreferenceScreen
+        android:key="button_data_usage_key"
+        android:title="@string/throttle_data_usage"
+        android:persistent="false">
+
+        <intent android:action="android.intent.action.MAIN"
+            android:targetPackage="com.android.phone"
+            android:targetClass="com.android.phone.DataUsage" />
+    </PreferenceScreen>
 
     <ListPreference
         android:key="preferred_network_mode_key"
