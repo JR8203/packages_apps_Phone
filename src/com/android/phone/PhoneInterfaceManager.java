@@ -32,7 +32,6 @@ import android.telephony.TelephonyManager;
 import android.text.TextUtils;
 import android.util.Log;
 
-import com.android.internal.net.IPVersion;
 import com.android.internal.telephony.DefaultPhoneNotifier;
 import com.android.internal.telephony.IccCard;
 import com.android.internal.telephony.ITelephony;
@@ -40,6 +39,7 @@ import com.android.internal.telephony.Phone;
 import com.android.internal.telephony.CallManager;
 import com.android.internal.telephony.TelephonyIntents;
 import com.android.internal.telephony.CommandException;
+import com.android.internal.telephony.Phone.IPVersion;
 import com.android.internal.telephony.ProxyManager;
 
 import java.util.List;
